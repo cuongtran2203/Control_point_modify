@@ -1,15 +1,18 @@
+import sys
+sys.path.append("..")
 from src.datasets import *
 from src.loss import *
 from src.model import *
+
 import torch
 import cv2
 import os
 import numpy as np
 from config.configs import Config_Training
 import time
-from logging import Logger
+from loguru import logger
 from tqdm import tqdm
-logger = Logger()
+# logger = Logger('runs')
 
 class AverageMeter(object):
     """Computes and stores the average and current value"""
@@ -38,6 +41,9 @@ if __name__ == "__main__":
     
     if config.pretrained is not None:
         checkpoint = torch.load(config.pretrained)
+        for key in list(checkpoint['model_state'].keys()):
+            if 'module.' in key:
+                checkpoint['model_state'][key.replace('module.', '')] = checkpoint['model_state'].pop(key)
         model.load_state_dict(checkpoint['model_state'])
         logger.info("Load checkpoints successfully")
     
@@ -50,7 +56,7 @@ if __name__ == "__main__":
     optimizer = torch.optim.Adam(model.parameters(), lr=config.LR, weight_decay=1e-10)
     loss_fun2 = loss_fun_classes.loss_fn_l1_loss
     scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[40, 90, 150, 200], gamma=0.5)
-    best_weights = -1
+    best_weights = 9999
     # Load datasets
     train_datasets = Train_CornerDetection_Datasets(root=config.DIR_TRAIN)
     val_datasets = Train_CornerDetection_Datasets(root=config.DIR_VAL)
@@ -64,7 +70,7 @@ if __name__ == "__main__":
 
     trainloader_len = len(trainloader)
     ### TRAINING LOOP ###
-    logger.info("Start training")
+    logger.info("------------------Start training--------------")
     for epoch in range(config.NUM_EPOCHS):
         print('* lambda_loss :'+str(config.lambda_loss)+'\t'+'learning_rate :'+str(optimizer.param_groups[0]['lr']))
         print('* lambda_loss :'+str(config.lambda_loss)+'\t'+'learning_rate :'+str(optimizer.param_groups[0]['lr']))
@@ -98,22 +104,18 @@ if __name__ == "__main__":
             loss_local_list += loss_local.item()
             
         list_len = len(loss_list)
-        logger.info('[{0}][{1}/{2}]\t\t'
-                    '[{3:.2f} {4:.4f} {5:.2f}]\t'
-                    '[l1:{6:.4f} l:{7:.4f} e:{8:.4f} r:{9:.4f} s:{10:.4f}]\t'
-                    '{loss.avg:.4f}'.format(
-                epoch + 1, i + 1, trainloader_len,
-                min(loss_list), sum(loss_list) / list_len, max(loss_list),
-                loss_l1_list / list_len, loss_local_list / list_len, loss_edge_list / list_len, loss_rectangles_list / list_len, loss_segment_list / list_len,
-                loss=losses))
-        logger.info('[{0}][{1}/{2}]\t\t'
-                    '[{3:.2f} {4:.4f} {5:.2f}]\t'
-                    '[l1:{6:.4f} l:{7:.4f} e:{8:.4f} r:{9:.4f} s:{10:.4f}]\t'
-                    '{loss.avg:.4f}'.format(
-                epoch + 1, i + 1, trainloader_len,
-                min(loss_list), sum(loss_list) / list_len, max(loss_list),
-                loss_l1_list / list_len, loss_local_list / list_len, loss_edge_list / list_len, loss_rectangles_list / list_len, loss_segment_list / list_len,
-                loss=losses))
+        # Format training results in a more readable way
+        logger.info(
+            f'Epoch [{epoch + 1}][{i + 1}/{trainloader_len}] '
+            f'Loss range: [{min(loss_list):.2f}, {sum(loss_list) / list_len:.4f}, {max(loss_list):.2f}] '
+            f'Components: [L1: {loss_l1_list / list_len:.4f}, '
+            f'Local: {loss_local_list / list_len:.4f}, '
+            f'Edge: {loss_edge_list / list_len:.4f}, '
+            f'Rect: {loss_rectangles_list / list_len:.4f}, '
+            f'Segment: {loss_segment_list / list_len:.4f}] '
+            f'Average: {losses.avg:.4f}'
+        )
+     
                 
         del loss_list[:]
         loss_segment_list = 0
@@ -147,24 +149,23 @@ if __name__ == "__main__":
                 losses.update(loss.item())
                 
 
-        logger.info('[{0}][{1}/{2}]\t\t'
-                    '[{3:.2f} {4:.4f} {5:.2f}]\t'
-                    '[l1:{6:.4f} l:{7:.4f} e:{8:.4f} r:{9:.4f} s:{10:.4f}]\t'
-                    '{loss.avg:.4f}'.format(
-                epoch + 1, i + 1, len(valloader),
-                min(loss_list), sum(loss_list) / list_len, max(loss_list),
-                loss_l1_list / list_len, loss_local_list / list_len, loss_edge_list / list_len, loss_rectangles_list / list_len, loss_segment_list / list_len,
-                loss=losses))
-        logger.info('[{0}][{1}/{2}]\t\t'
-                    '[{3:.2f} {4:.4f} {5:.2f}]\t'
-                    '[l1:{6:.4f} l:{7:.4f} e:{8:.4f} r:{9:.4f} s:{10:.4f}]\t'
-                    '{loss.avg:.4f}'.format(
-                epoch + 1, i + 1, len(valloader),
-                min(loss_list), sum(loss_list) / list_len, max(loss_list),
-                loss_l1_list / list_len, loss_local_list / list_len, loss_edge_list / list_len, loss_rectangles_list / list_len, loss_segment_list / list_len,
-                loss=losses))
+        # Format validation results in a more readable way
+        list_len = len(loss_list)
+        logger.info(
+            f'Epoch [{epoch + 1}][{i + 1}/{len(valloader)}] '
+            f'Loss range: [{min(loss_list):.2f}, {sum(loss_list) / list_len:.4f}, {max(loss_list):.2f}] '
+            f'Components: [L1: {loss_l1_list / list_len:.4f}, '
+            f'Local: {loss_local_list / list_len:.4f}, '
+            f'Edge: {loss_edge_list / list_len:.4f}, '
+            f'Rect: {loss_rectangles_list / list_len:.4f}, '
+            f'Segment: {loss_segment_list / list_len:.4f}] '
+            f'Average: {losses.avg:.4f}'
+        )
+
         
-        if losses.avg > best_weights:
+        scheduler.step()
+        
+        if losses.avg < best_weights:
             best_weights = losses.avg
             if not os.path.exists("checkpoints"):
                 os.makedirs("checkpoints",exist_ok=True)
