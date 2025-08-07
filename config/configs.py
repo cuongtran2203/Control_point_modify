@@ -15,6 +15,14 @@ class Config_Training(object):
     batch_size = 32
     num_workers = 2
     print_freq = 10
+    fiducial_point_gaps = [1, 2, 3, 5, 6, 10, 15, 30] 
+    fiducial_point_num = [31, 16, 11, 7, 6, 4, 3, 2]
+    col_gap = 0
+    row_gap = 0
+    tps = True
+    fiducial_num = fiducial_point_num[col_gap],fiducial_point_num[row_gap]
+    
+    
     
     
     
